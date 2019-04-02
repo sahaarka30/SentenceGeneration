@@ -1,0 +1,132 @@
+Contexual Sentence Generation using simple LSTM 
+
+    Abstract: As we have grown up from learning alphabets to constructing words to constructing sentences we have all faced a section in our exams that read out "Make Sentences with the following".
+              Similarly we have all spend hours behind that section to construct a sentence that is not only meaningful but also in context with the given word. This section tends to reappear from
+              no where in different pseudonyms such as "Headlines", "Tag lines" and many more. Our aim here is to reduce those hours of scratching heads to seconds of scrolling over a list of possible
+              sentences crafted through deep learning. Our appraoch is to design a predictive algorithm that can help us generate contexual meaningful sentences. The first of our many attempts is
+              implementing this idea with simple LSTM.  
+    
+    Requirements : 
+    
+        1.NumPy : NumPy is a package in Python used for Scientific Computing. In the experiment NumPy has been used to vectorize the training dataset(sentences).
+        
+        2.Tensorflow : TensorFlow is a Python library for fast numerical computing created and released by Google. In our experiment Keras runs on top of Tensorflow.
+        
+        3.Keras : Keras is a high-level neural networks API, written in Python and capable of running on top of TensorFlow.
+
+    
+      
+        
+     Methods :
+        
+        1. To get started first let's import the required modules. We will be getting into details regarding the modules when we use them in our code.
+        
+                import re
+                import sys
+                import string
+                import numpy as np
+                from keras.utils import np_utils
+                from keras.models import Sequential
+                from keras.callbacks import ModelCheckpoint
+                from keras.layers import Dense, Dropout, LSTM
+                from keras.layers.embeddings import Embedding
+
+        2. Now we have to read the dataset from the text document into a string. Firstly we will split the dataset into individual sentences,then we get rid of the punctuations and we replace '-' with
+           ' ' becuase we are only dealing with words here. In order to standardize our dataset we remove all special characters and thus we are left with plain text containing only words.
+        
+                rawtext = open('train_data.txt','r').read().split('\n')
+                rawtext = ' '.join(rawtext)
+                rawtext = [word.strip(string.punctuation) for word in rawtext.split()]
+                rawtext = ' '.join(rawtext)
+                rawtext = rawtext.replace('-', ' ')
+                rawtext = ' '.join(rawtext.split())
+
+        3. Now let's create a list that contains each word in the dataset only once(unique_words) which thereby becomes our vocabulary. Once our vocabulary is created, we have to map each unique word
+           to a specific integer so that we can fit the list of integers,representing a sequence of words,in the Sequential()model. Our vocabulary size turns out to be 5436.
+        
+                all_words = rawtext.split()
+                unique_words = sorted(list(set(all_words)))
+                n_vocab = len(unique_words)
+                print "Total Vocab: ", n_vocab
+                word_to_int = dict((w, i) for i, w in enumerate(unique_words))
+                int_to_word = dict((i, w) for i, w in enumerate(unique_words))                
+            #dictionaries word_to_int and int_to_word is used to fetch the integer value for a specific word and vice versa
+            
+        4. Then we will convert rawtext into a list of tokens so that we can use the list raw_text to map dataX and dataY. The total no of words comes out to be 35037:
+        
+                raw_text = rawtext.split()
+                n_words = len(raw_text)
+                print "Total Words: ", n_words
+        
+        5. Now we consider a sequence length up to which words will be mapped into dataX. Correspondingly the very next word immediately after the sequence length will be mapped into dataY using
+           previously built dictionary(word_to_int). Total possible patterns in our training set is basically the length of dataX which is 34937.
+        
+                seq_length = 100
+                dataX = []
+                dataY = []
+                for i in xrange(0, n_words - seq_length):
+                    seq_in  = raw_text[i: i+seq_length]
+                    seq_out = raw_text[i+seq_length]
+                    dataX.append([word_to_int[word] for word in seq_in])
+                    dataY.append(word_to_int[seq_out])
+                n_patterns = len(dataX)
+                print "Total patterns: ", n_patterns
+           
+        6. We have created dataX and dataY but we need to reshape it. Why? Because Sequential() model does not accept 2D matrix. So we reshape dataX to size of (samples, time steps, features) and
+           scale it to shape(1). In our experiemt samples, time steps, features corresponds to n_patterns, seq_length, 1 respectively. Then we reshape dataY as one hot encoding. To achieve all this
+           we use NumPy reshape and Keras np_utils.
+        
+                X_train = np.reshape(dataX, (n_patterns, seq_length, 1))/float(n_vocab)
+                Y_train = np_utils.to_categorical(dataY)
+                # model file
+                filepath="models/weights/word-weights-improvement-600.hdf5"
+        
+        7. Once we have got the X_train and Y_train and initialized the location to store the corresponding model weights,we define a Keras model - Sequential() which is a linear stack of layers.
+                   
+                model = Sequential()
+        
+        8. Now we have to define the layers of the Sequential() model. We start with specifying a recurrent neural network layer - LSTM(long short term memory). Just as the name 'LSTM' suggests,it
+           is a network of cell blocks each of which contains an input gate, a forget gate and an output gate. The input gate accepts a new word or sequence which is concatenated with the
+           previous output sequence. This data is then added to a recurrence layer controlled by the forget gate which helps the network to learn what to forget and what not to. Finally the
+           output gate determines which outputs need to be returned from the cell to the next. Thus with a network of LSTM cell blocks, this 'short term memory' can last for a 'long' time.
+           As we have understood how LSTM works, lets see how we can use it. We first have to specify the dimensionality of the output space which is 600 in our case. Then we define the 
+           input_shape which is basically the dimensions of our X_train.      
+           
+                model.add(LSTM(600, input_shape=(X_train.shape[1], X_train.shape[2])))
+                
+        9. Next we add a Dropout() layer. This is required to 'drop' randomly selected neurons during the training process and in doing so the remaining neurons kick in to make up for the 
+           predictions made by the missing neurons resulting in a more generalized network that is less prone to overfitting the training data. We only define the rate or the fraction of
+           input units to be dropped - 0.3(any float value between 0 and 1)                 
+                
+                model.add(Dropout(0.3))
+                
+        10. We then move on to our most basic layer, Dense() layer. This layer is responsible for feeding all outputs from the previous layer to all its neurons, each neuron providing one output 
+            to the next layer. Parameters that need to be specified are the dimensionality of the output space which is our number of rows in Y_train, and the type of activation where use softmax.
+            
+                model.add(Dense(Y_train.shape[1], activation='softmax'))
+                
+        11. Finally we are ready to train our data but before doing so we need to configure the learning process, which is done by the compile() method consisting of a loss function and an 
+            optimizer. The loss fuction 'categorical_crossentropy' will basically calculate the difference between output and target variable and the optimizer algorithm 'adam' is used to update
+            weights and biases of a model to reduce the error and calculates different learning rate. The algorithm 'adam' stands for Adaptive Moment Estimation. It works well in practice,
+            is faster, and outperforms other techniques. Thus we start the training process with the method fit() having parameters - NumPy arrays of training and target data, number of epochs
+            (iterations over training and target data), batch size(number of samples per gradient update) and callbacks(list of checkpoint).
+            
+            
+                model.compile(loss='categorical_crossentropy', optimizer='adam')
+                print model.summary()
+                checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=False, save_best_only=True, mode='min')
+                callbacks_list = [checkpoint]
+                # run training
+                model.fit(X_train, Y_train, epochs=1000, batch_size=32, callbacks=callbacks_list)
+
+
+    Synopsis : 
+        
+        1. Reading our training dataset, "train_data.txt"
+        2. Representing each unique word in the dataset with an integer
+        3. Creating dataX and dataY
+            a. dataX holds the a specified number of words(seq_length)
+            b. dataY holds the very next word after the specified number of words(seq_length)
+        4. Using Sequential model with a LSTM layer to predict the very next possible word.
+        5. Finally we fit the model with our training dataset(X_train,Y_train) to create model weights.
+         
